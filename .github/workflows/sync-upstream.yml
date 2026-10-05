@@ -1,0 +1,67 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.event.repository.fork
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync from upstream/main
+        id: sync
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/shuaiplus/nodewarden.git
+          git fetch --no-tags upstream main
+          UPSTREAM_SHA="$(git rev-parse upstream/main)"
+          echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+
+          if git merge-base --is-ancestor "$UPSTREAM_SHA" HEAD; then
+            echo "already_up_to_date=true" >> "$GITHUB_OUTPUT"
+            echo "Already up to date with upstream/main ($UPSTREAM_SHA)"
+            exit 0
+          fi
+
+          echo "already_up_to_date=false" >> "$GITHUB_OUTPUT"
+          git merge --no-edit -m "chore: sync upstream/main ($UPSTREAM_SHA)" upstream/main
+
+          # Fast-forward to upstream would drop this fork-only workflow.
+          git checkout 'HEAD@{1}' -- .github/workflows/sync-upstream.yml
+          if ! git diff --cached --quiet -- .github/workflows/sync-upstream.yml; then
+            git commit -m "chore: restore sync-upstream workflow after sync"
+          fi
+
+      - name: Push
+        if: steps.sync.outputs.already_up_to_date != 'true'
+        run: git push origin HEAD:main
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.sync.outputs.already_up_to_date }}" = "true" ]; then
+            echo "### Already up to date with upstream/main" >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Synced upstream/main"
+              echo "- **Commit:** \`${{ steps.sync.outputs.upstream_sha }}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
