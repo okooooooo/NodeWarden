@@ -1,0 +1,6 @@
+# https://google.github.io/osv-scanner/configuration/
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2027-01-05
+reason = "braces 3.0.3 is the latest npm release; CVE-2026-93687 has no patched version yet. Re-evaluate when 3.0.4+ ships."
